@@ -15,6 +15,12 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSess
 type Json = Record<string, unknown>;
 function response(body: Json, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }); }
 function cleanError(error: unknown) { return error instanceof Error ? error.message : String(error); }
+async function mailuToken() {
+  if (MAILU_API_TOKEN) return MAILU_API_TOKEN;
+  const { data, error } = await admin.rpc("eh_get_mailu_api_token");
+  if (error || typeof data !== "string" || !data) throw new Error("Mailu API token is not configured on the server.");
+  return data;
+}
 async function requireUser(req: Request) {
   const authorization = req.headers.get("Authorization") ?? "";
   if (!authorization) throw new Error("Authentication required.");
@@ -26,8 +32,8 @@ async function requireUser(req: Request) {
   return { user: data.user, isAdmin: profile.role === "admin" };
 }
 async function mailu(path: string, init: RequestInit = {}) {
-  if (!MAILU_API_TOKEN) throw new Error("MAILU_API_TOKEN is not configured on the server.");
-  const result = await fetch(`${MAILU_API_BASE}${path}`, { ...init, headers: { Authorization: `Bearer ${MAILU_API_TOKEN}`, "Content-Type": "application/json", ...(init.headers ?? {}) } });
+  const token = await mailuToken();
+  const result = await fetch(`${MAILU_API_BASE}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init.headers ?? {}) } });
   const text = await result.text(); let payload: unknown = null; try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
   if (!result.ok) { const message = typeof payload === "object" && payload && "message" in payload ? String((payload as { message: unknown }).message) : `Mailu returned HTTP ${result.status}`; const error = new Error(message) as Error & { status?: number }; error.status = result.status; throw error; }
   return payload as Record<string, unknown>;

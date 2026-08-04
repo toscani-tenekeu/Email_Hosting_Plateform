@@ -48,7 +48,7 @@ The Mailu API token is never sent to the browser. Customers can only access reco
 git clone https://github.com/toscani-tenekeu/Email_Hosting_Plateform.git
 cd Email_Hosting_Plateform
 cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 
@@ -67,6 +67,16 @@ Build for production:
 ```bash
 npm run build
 npm run preview
+```
+
+For a reproducible VPS deployment, use the checked-in deployment script from
+the repository root. It loads the protected frontend environment file, runs
+`npm ci`, lint and build, publishes a timestamped release, switches the
+`current` symlink atomically, validates Nginx and keeps at least two releases
+for rollback:
+
+```bash
+sudo scripts/deploy-vps.sh
 ```
 
 ## Backend deployment
@@ -105,7 +115,7 @@ The migration creates these schedules:
 
 ## First administrator
 
-Create the account normally through the frontend, then promote it once from the Supabase SQL editor:
+Create or invite the account through the official Supabase Auth tooling, then promote it once from the Supabase SQL editor:
 
 ```sql
 update public.eh_profiles
