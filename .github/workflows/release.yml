@@ -16,14 +16,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Create initial release
+      - name: Create or update initial release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f v0.1.0 "$GITHUB_SHA"
+          git push --force origin refs/tags/v0.1.0
+
+          NOTES="Initial release of the KmerHosting Email Hosting platform. Includes the English public website, four pricing plans, Supabase authentication and prefixed eh_ schema, prepaid USD billing, customer dashboard, Mailu domain/mailbox provisioning, DNS guidance, renewal reminders, automated suspension/recovery, Docker and Vercel deployment support. Domain registration is not included. Set MAILU_API_TOKEN as a Supabase Edge Function secret before provisioning real mail services."
+
           if gh release view v0.1.0 >/dev/null 2>&1; then
-            echo "Release v0.1.0 already exists."
+            gh release edit v0.1.0 \
+              --title "KmerHosting Email Hosting v0.1.0" \
+              --notes "$NOTES"
           else
             gh release create v0.1.0 \
-              --target "$GITHUB_SHA" \
+              --verify-tag \
               --title "KmerHosting Email Hosting v0.1.0" \
-              --notes "Initial release of the KmerHosting Email Hosting platform. Includes the English public website, four pricing plans, Supabase authentication and prefixed eh_ schema, prepaid USD billing, customer dashboard, Mailu domain/mailbox provisioning, DNS guidance, renewal reminders, automated suspension/recovery, Docker and Vercel deployment support. Domain registration is not included. Set MAILU_API_TOKEN as a Supabase Edge Function secret before provisioning real mail services."
+              --notes "$NOTES"
+          fi
