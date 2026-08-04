@@ -1,11 +1,28 @@
-import { useEffect, useState } from 'react'
-import { Mail, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { Check, Copy, Download, ExternalLink, Mail, Plus, RefreshCw, Send, Server, Trash2, X } from 'lucide-react'
 import { callApi, callMailApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
+import { mailuWebmailUrl } from '../config'
 import { formatBytes } from '../lib/pricing'
 import { DashboardLayout, EmptyState, PageTitle, StatusBadge } from '../components/DashboardLayout'
 import { Notice } from '../components/PublicLayout'
 import { useDashboardData } from './useDashboardData'
+
+function csvValue(value) {
+  return `"${String(value ?? '').replaceAll('"', '""')}"`
+}
+
+function dnsCsv(records) {
+  const rows = [
+    ['Record type', 'Hostname', 'Value', 'Priority', 'Status'],
+    ...records.map((record) => [record.record_type, record.hostname, record.value, record.priority ?? '', record.status]),
+  ]
+  return `\uFEFF${rows.map((row) => row.map(csvValue).join(',')).join('\r\n')}\r\n`
+}
+
+function fileNameForDomain(domain) {
+  return `${String(domain || 'domain').replace(/[^a-z0-9.-]+/gi, '-')}-dns-records.csv`
+}
 
 function MailboxesPage() {
   const data = useDashboardData()
@@ -18,11 +35,13 @@ function MailboxesPage() {
     event.preventDefault(); setMessage('')
     try { await callMailApi('create_mailbox', form); setOpen(false); setForm({ serviceId: '', localPart: '', displayName: '', password: '' }); await data.reload() } catch (error) { setMessage(error.message) }
   }
+
   async function remove(id, email) {
     if (!confirm(`Delete ${email}? Mailbox content may be permanently removed.`)) return
     try { await callMailApi('delete_mailbox', { mailboxId: id }); await data.reload() } catch (error) { alert(error.message) }
   }
-  return <DashboardLayout><PageTitle title="Mailboxes" text="Create professional email accounts within each plan limit." action={<button className="button" onClick={() => setOpen(true)} disabled={!activeServices.length}><Plus size={17} /> Create mailbox</button>} />{open && <div className="modal-backdrop"><form className="modal" onSubmit={create}><div className="modal-head"><h2>Create mailbox</h2><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Domain<select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })}><option value="">Select a domain</option>{activeServices.map((item) => <option value={item.id} key={item.id}>{item.domain_name}</option>)}</select></label><label>Address<input required pattern="[A-Za-z0-9._-]+" placeholder="hello" value={form.localPart} onChange={(e) => setForm({ ...form, localPart: e.target.value.toLowerCase() })} /></label><label>Display name<input placeholder="Company Support" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></label><label>Temporary password<input required type="password" minLength="10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><small>The password is sent securely to Mailu and is not stored in plaintext by this platform.</small>{message && <div className="form-message">{message}</div>}<button className="button full">Create mailbox</button></form></div>}<section className="panel table-panel">{data.mailboxes.length ? <div className="responsive-table"><table><thead><tr><th>Email address</th><th>Storage</th><th>Protocols</th><th>Status</th><th></th></tr></thead><tbody>{data.mailboxes.map((mailbox) => <tr key={mailbox.id}><td><b>{mailbox.email}</b><small>{mailbox.display_name || 'No display name'}</small></td><td>{formatBytes(mailbox.used_bytes)} / {formatBytes(mailbox.quota_bytes)}</td><td>IMAP {mailbox.imap_enabled ? 'on' : 'off'} · POP3 {mailbox.pop3_enabled ? 'on' : 'off'}</td><td><StatusBadge value={mailbox.enabled ? 'active' : 'suspended'} /></td><td><button className="icon-button danger" onClick={() => remove(mailbox.id, mailbox.email)} title="Delete mailbox"><Trash2 size={17} /></button></td></tr>)}</tbody></table></div> : <EmptyState icon={Mail} title="No mailboxes" text="Provision a domain, then create the first professional address." />}</section></DashboardLayout>
+
+  return <DashboardLayout><PageTitle title="Mailboxes" text="Create professional email accounts within each plan limit." action={<button className="button" onClick={() => setOpen(true)} disabled={!activeServices.length}><Plus size={17} /> Create mailbox</button>} />{open && <div className="modal-backdrop"><form className="modal" onSubmit={create}><div className="modal-head"><h2>Create mailbox</h2><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Domain<select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })}><option value="">Select a domain</option>{activeServices.map((item) => <option value={item.id} key={item.id}>{item.domain_name}</option>)}</select></label><label>Address<input required pattern="[A-Za-z0-9._-]+" placeholder="hello" value={form.localPart} onChange={(e) => setForm({ ...form, localPart: e.target.value.toLowerCase() })} /></label><label>Display name<input placeholder="Company Support" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></label><label>Temporary password<input required type="password" minLength="10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><small>The password is sent securely to Mailu and is not stored in plaintext by this platform.</small>{message && <div className="form-message">{message}</div>}<button className="button full">Create mailbox</button></form></div>}<section className="panel table-panel"><div className="panel-head"><h2>Your mailboxes</h2><a href={mailuWebmailUrl} target="_blank" rel="noreferrer">Open Mailu panel <ExternalLink size={14} /></a></div>{data.mailboxes.length ? <div className="responsive-table"><table><thead><tr><th>Email address</th><th>Storage</th><th>Protocols</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.mailboxes.map((mailbox) => <tr key={mailbox.id}><td><b>{mailbox.email}</b><small>{mailbox.display_name || 'No display name'}</small></td><td>{formatBytes(mailbox.used_bytes)} / {formatBytes(mailbox.quota_bytes)}</td><td>IMAP {mailbox.imap_enabled ? 'on' : 'off'} · POP3 {mailbox.pop3_enabled ? 'on' : 'off'}</td><td><StatusBadge value={mailbox.enabled ? 'active' : 'suspended'} /></td><td><div className="table-actions">{mailbox.enabled && <a className="button tiny secondary" href={mailuWebmailUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Mailu</a>}<button className="icon-button danger" onClick={() => remove(mailbox.id, mailbox.email)} title="Delete mailbox" aria-label={`Delete ${mailbox.email}`}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></div> : <EmptyState icon={Mail} title="No mailboxes" text="Provision a domain, then create the first professional address." />}</section></DashboardLayout>
 }
 
 function DnsPage() {
@@ -30,21 +49,69 @@ function DnsPage() {
   const [services, setServices] = useState([])
   const [records, setRecords] = useState([])
   const [selected, setSelected] = useState('')
-  async function load() {
-    if (!user) return
-    const dashboard = await callApi('dashboard')
-    const serviceResult = { data: dashboard.services || [] }
-    setServices(serviceResult.data)
-    const id = selected || serviceResult.data?.[0]?.id || ''
-    setSelected(id)
-    if (id) {
-      const recordResult = await callApi('service_dns', { serviceId: id })
-      setRecords(recordResult.records || [])
-    }
+  const [summary, setSummary] = useState({ verifiedCount: 0, totalCount: 0, allVerified: false })
+  const [checking, setChecking] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [copiedId, setCopiedId] = useState('')
+  const [message, setMessage] = useState('')
+
+  const loadServices = useCallback(async () => {
+    if (!user?.id) return
+    try {
+      const dashboard = await callApi('dashboard')
+      const nextServices = dashboard.services || []
+      setServices(nextServices)
+      setSelected((current) => current || nextServices[0]?.id || '')
+    } catch (error) { setMessage(error.message) }
+  }, [user?.id])
+
+  const verify = useCallback(async (serviceId = selected) => {
+    if (!serviceId) return
+    setChecking(true)
+    try {
+      const result = await callApi('verify_dns', { serviceId })
+      setRecords(result.records || [])
+      setSummary(result.summary || { verifiedCount: 0, totalCount: 0, allVerified: false })
+    } catch (error) { setMessage(error.message) } finally { setChecking(false) }
+  }, [selected])
+
+  useEffect(() => { loadServices() }, [loadServices])
+  useEffect(() => { if (selected) verify(selected) }, [selected, verify])
+  useEffect(() => {
+    if (!selected || !records.length || summary.allVerified) return undefined
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') verify(selected) }, 15000)
+    return () => clearInterval(timer)
+  }, [selected, records.length, summary.allVerified, verify])
+
+  async function sync() {
+    try { await callMailApi('sync_dns', { serviceId: selected }); await verify(selected) } catch (error) { setMessage(error.message) }
   }
-  useEffect(() => { load() }, [user?.id, selected])
-  async function sync() { try { await callMailApi('sync_dns', { serviceId: selected }); await load() } catch (error) { alert(error.message) } }
-  return <DashboardLayout><PageTitle title="DNS setup" text="Publish these records at the DNS provider that manages your domain." action={<button className="button secondary" onClick={sync} disabled={!selected}><RefreshCw size={17} /> Refresh from Mailu</button>} /><Notice tone="warning">KmerHosting Email Hosting does not register the domain. DNS changes must be made where your domain nameservers are managed.</Notice><section className="panel"><label className="inline-select">Domain<select value={selected} onChange={(e) => setSelected(e.target.value)}>{services.map((item) => <option key={item.id} value={item.id}>{item.domain_name}</option>)}</select></label>{records.length ? <div className="dns-list">{records.map((record) => <article key={record.id}><div><StatusBadge value={record.status} /><b>{record.record_type}</b></div><span>{record.hostname}</span><code>{record.value}</code>{record.priority != null && <small>Priority: {record.priority}</small>}</article>)}</div> : <EmptyState icon={Server} title="No DNS records available" text="Provision the domain or refresh the Mailu DNS details." />}</section></DashboardLayout>
+
+  async function copyValue(record) {
+    try {
+      await navigator.clipboard.writeText(record.value)
+      setCopiedId(record.id)
+      setTimeout(() => setCopiedId(''), 1800)
+    } catch (error) { setMessage(error.message) }
+  }
+
+  function download() {
+    const domain = services.find((item) => item.id === selected)?.domain_name
+    if (!records.length) return
+    const blob = new Blob([dnsCsv(records)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url; link.download = fileNameForDomain(domain); link.click(); URL.revokeObjectURL(url)
+  }
+
+  async function sendHelp() {
+    if (!selected) return
+    setSending(true); setMessage('')
+    try { await callApi('send_dns_help', { serviceId: selected }); setMessage('Your DNS help request and CSV are queued for KmerHosting Support. Support is free.') } catch (error) { setMessage(error.message) } finally { setSending(false) }
+  }
+
+  const domain = services.find((item) => item.id === selected)?.domain_name || ''
+  return <DashboardLayout><PageTitle title="DNS setup" text="Publish these records at the DNS provider that manages your domain." action={<div className="page-actions"><button className="button secondary" onClick={download} disabled={!records.length}><Download size={17} /> Download CSV</button><button className="button" onClick={sendHelp} disabled={!selected || sending}><Send size={17} /> {sending ? 'Sending…' : 'Send to KmerHosting'}</button></div>} /><Notice tone={summary.allVerified ? 'success' : 'warning'}>{summary.allVerified ? <><Check size={16} /> All DNS records for {domain} are publicly resolved.</> : <>DNS verification is automatic every 15 seconds while records are unresolved ({summary.verifiedCount}/{summary.totalCount} verified). Need help? Support is free.</>}</Notice>{message && <div className="form-message">{message}</div>}<section className="panel"><div className="panel-head"><label className="inline-select">Domain<select value={selected} onChange={(e) => setSelected(e.target.value)}>{services.map((item) => <option key={item.id} value={item.id}>{item.domain_name}</option>)}</select></label><button className="button secondary" onClick={sync} disabled={!selected || checking}><RefreshCw size={17} className={checking ? 'spin' : ''} /> Refresh from Mailu</button></div>{records.length ? <div className="dns-list">{records.map((record) => <article key={record.id}><div><StatusBadge value={record.status} /><b>{record.record_type}</b></div><span>{record.hostname}</span><div className="record-value-row"><code>{record.value}</code><button className="icon-button" onClick={() => copyValue(record)} title="Copy DNS record" aria-label={`Copy ${record.record_type} record`}>{copiedId === record.id ? <Check size={16} /> : <Copy size={16} />}</button></div>{record.priority != null && <small>Priority: {record.priority}</small>}</article>)}</div> : <EmptyState icon={Server} title="No DNS records available" text="Provision the domain or refresh the Mailu DNS details." />}</section></DashboardLayout>
 }
 
 export { MailboxesPage, DnsPage }

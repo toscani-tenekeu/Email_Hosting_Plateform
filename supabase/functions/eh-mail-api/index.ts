@@ -100,6 +100,41 @@ async function ownedService(serviceId: string, userId: string, isAdmin: boolean)
 async function mailuToken() { if (MAILU_API_TOKEN) return MAILU_API_TOKEN; const { data, error } = await admin.rpc("eh_get_mailu_api_token"); if (error || typeof data !== "string" || !data) throw new Error("Mailu API token is not configured on the server."); return data; }
 async function mailu(path: string, init: RequestInit = {}) { const result = await fetch(`${MAILU_API_BASE}${path}`, { ...init, headers: { Authorization: `Bearer ${await mailuToken()}`, "Content-Type": "application/json", ...(init.headers ?? {}) } }); const text = await result.text(); let payload: unknown = null; try { payload = text ? JSON.parse(text) : null; } catch { payload = text; } if (!result.ok) { const error = new Error(typeof payload === "object" && payload && "message" in payload ? String((payload as { message: unknown }).message) : `Mailu returned HTTP ${result.status}`) as Error & { status?: number }; error.status = result.status; throw error; } return payload as Record<string, unknown>; }
 function dnsRows(serviceId: string, domain: string, details: Record<string, unknown>) { const rows: Array<Record<string, unknown>> = []; const add = (recordType: string, hostname: string, value: unknown, priority: number | null = null) => { if (value == null || value === "") return; if (Array.isArray(value)) { for (const item of value) add(recordType, hostname, item, priority); return; } for (const item of String(value).split("\n").map((v) => v.trim()).filter(Boolean)) rows.push({ service_id: serviceId, record_type: recordType, hostname, value: item, priority, status: "pending" }); }; add("MX", domain, details.dns_mx, 10); add("TXT", domain, details.dns_spf); add("TXT", domain, details.dns_dmarc); add("TXT", domain, details.dns_dmarc_report); add("TXT", domain, details.dns_dkim); add("TLSA", `_25._tcp.${domain}`, details.dns_tlsa); add("AUTOCONFIG", domain, details.dns_autoconfig); return rows; }
+function normalizeDnsValue(value: unknown) { return String(value ?? "").replace(/"\s+"/g, "").replaceAll('"', "").replace(/\.$/, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+function parseDnsExpectation(record: Record<string, unknown>) {
+  const line = String(record.value ?? "").trim();
+  const match = line.match(/^(\S+)\s+\d+\s+IN\s+(\S+)\s+(.+)$/i);
+  return match ? { name: match[1], type: match[2].toUpperCase(), data: match[3] } : { name: String(record.hostname), type: String(record.record_type), data: line };
+}
+async function verifyDnsRecords(serviceId: string) {
+  const { data: records, error } = await admin.from("eh_dns_records").select("*").eq("service_id", serviceId).order("record_type");
+  if (error) throw error;
+  const checkedAt = new Date().toISOString();
+  const checked = await Promise.all((records ?? []).map(async (record) => {
+    const expected = parseDnsExpectation(record as Record<string, unknown>);
+    let status = "pending";
+    try {
+      const lookup = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(expected.name)}&type=${encodeURIComponent(expected.type)}`, { headers: { Accept: "application/dns-json" } });
+      if (!lookup.ok) throw new Error(`DNS lookup returned HTTP ${lookup.status}`);
+      const payload = await lookup.json() as { Answer?: Array<{ data?: unknown }> };
+      const answers = Array.isArray(payload.Answer) ? payload.Answer : [];
+      status = answers.some((answer) => normalizeDnsValue(answer.data) === normalizeDnsValue(expected.data)) ? "verified" : answers.length ? "failed" : "pending";
+    } catch (lookupError) {
+      console.warn(`DNS lookup failed for ${expected.name}`, cleanError(lookupError));
+    }
+    const { error: updateError } = await admin.from("eh_dns_records").update({ status, last_checked_at: checkedAt }).eq("id", record.id).eq("service_id", serviceId);
+    if (updateError) throw updateError;
+    return { ...record, status, last_checked_at: checkedAt };
+  }));
+  const verifiedCount = checked.filter((record) => record.status === "verified").length;
+  return { records: checked, summary: { verifiedCount, totalCount: checked.length, allVerified: checked.length > 0 && verifiedCount === checked.length } };
+}
+function csvValue(value: unknown) { return `"${String(value ?? "").replaceAll('"', '""')}"`; }
+function dnsCsv(records: Array<Record<string, unknown>>) {
+  const rows = [["Record type", "Hostname", "Value", "Priority", "Status"], ...records.map((record) => [record.record_type, record.hostname, record.value, record.priority ?? "", record.status])];
+  return `\uFEFF${rows.map((row) => row.map(csvValue).join(",")).join("\r\n")}\r\n`;
+}
+function dnsCsvFilename(domain: string) { return `${domain.replace(/[^a-z0-9.-]+/gi, "-")}-dns-records.csv`; }
 async function syncDns(service: Record<string, unknown>) { const domain = String(service.domain_name); const details = await mailu(`/domain/${encodeURIComponent(domain)}`); const rows = dnsRows(String(service.id), domain, details); await admin.from("eh_dns_records").delete().eq("service_id", service.id); if (rows.length) { const { error } = await admin.from("eh_dns_records").insert(rows); if (error) throw error; } return rows; }
 async function provisionService(service: Record<string, unknown>) { const domain = String(service.domain_name); try { await mailu("/domain", { method: "POST", body: JSON.stringify({ name: domain, comment: `KmerHosting Email service ${service.id}`, max_users: service.mailbox_limit ?? -1, max_aliases: -1, max_quota_bytes: Number(service.storage_bytes_per_mailbox), signup_enabled: false }) }); } catch (error) { if ((error as Error & { status?: number }).status !== 409) throw error; } try { await mailu(`/domain/${encodeURIComponent(domain)}/dkim`, { method: "POST", body: "{}" }); } catch (error) { if ((error as Error & { status?: number }).status !== 409) console.warn("DKIM generation warning", cleanError(error)); } const records = await syncDns(service); const { error } = await admin.from("eh_services").update({ status: "active", mailu_domain_created: true, last_provisioned_at: new Date().toISOString() }).eq("id", service.id); if (error) throw error; await admin.from("eh_provisioning_jobs").update({ status: "completed", completed_at: new Date().toISOString(), last_error: null }).eq("service_id", service.id).eq("job_type", "create_domain").in("status", ["pending", "failed", "processing"]); return { records }; }
 async function setDomainUsersEnabled(domain: string, enabled: boolean) { const payload = await mailu(`/domain/${encodeURIComponent(domain)}/users`) as unknown; const list = Array.isArray(payload) ? payload : []; for (const item of list) { const email = String((item as Record<string, unknown>).email ?? ""); if (email) await mailu(`/user/${encodeURIComponent(email)}`, { method: "PATCH", body: JSON.stringify({ enabled }) }); } const emails = list.map((item) => String((item as Record<string, unknown>).email ?? "")).filter(Boolean); if (emails.length) await admin.from("eh_mailboxes").update({ enabled }).in("email", emails); return list.length; }
@@ -124,6 +159,8 @@ Deno.serve(async (req: Request) => {
     const isAdmin = user.role === "admin";
     if (action === "dashboard") return response({ ok: true, ...(await dashboard(user.id)) });
     if (action === "service_dns") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); const { data: records, error } = await admin.from("eh_dns_records").select("*").eq("service_id", service.id).order("record_type"); if (error) throw error; return response({ ok: true, records: records ?? [] }); }
+    if (action === "verify_dns") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); return response({ ok: true, ...(await verifyDnsRecords(String(service.id))) }); }
+    if (action === "send_dns_help") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); const { data: records, error } = await admin.from("eh_dns_records").select("record_type,hostname,value,priority,status").eq("service_id", service.id).order("record_type"); if (error) throw error; if (!records?.length) throw new Error("No DNS records are available for this service yet."); const supportEmail = await configValue("support_email", "support@kmerhosting.com"); const csv = dnsCsv(records as Array<Record<string, unknown>>); const filename = dnsCsvFilename(String(service.domain_name)); const { data: queued, error: queueError } = await admin.from("eh_email_outbox").insert({ user_id: user.id, recipient: supportEmail, template_key: "dns_support", subject: `DNS setup help · ${service.domain_name}`, payload: { domainName: service.domain_name, replyTo: user.email, attachmentFilename: filename, csv, message: "A customer requested free DNS setup assistance. The DNS records are attached as a CSV file." } }).select("id").single(); if (queueError) throw queueError; return response({ ok: true, queued: true, requestId: queued.id, recipient: supportEmail }, 202); }
     if (action === "wallet_transactions") { const { data, error } = await admin.from("eh_wallet_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(30); if (error) throw error; return response({ ok: true, transactions: data ?? [] }); }
     if (action === "mark_notification_read") { const { error } = await admin.from("eh_notifications").update({ read_at: new Date().toISOString() }).eq("id", String(body.id ?? "")).eq("user_id", user.id); if (error) throw error; return response({ ok: true }); }
     if (action === "update_profile") { const fullName = String(body.fullName ?? "").trim(); const companyName = String(body.companyName ?? "").trim() || null; const { error: userError } = await admin.from("eh_users").update({ full_name: fullName, company_name: companyName }).eq("id", user.id); if (userError) throw userError; const { error } = await admin.from("eh_profiles").update({ full_name: fullName, company_name: companyName }).eq("id", user.id); if (error) throw error; return response({ ok: true, user: { ...user, full_name: fullName, company_name: companyName } }); }
