@@ -2,7 +2,7 @@
 
 Customer-facing email hosting platform for `email-hosting.kmerhosting.com`.
 
-The application sells and manages professional email hosting for domains that customers already own. Domain registration is not included. Mail services are provisioned through the Mailu installation at `mail.kmerhosting.com`.
+The application sells and manages professional email hosting for domains that customers already own. Domain registration is not included. Mail services are provisioned through the managed mail installation at `mail.kmerhosting.com`.
 
 ## Included
 
@@ -18,9 +18,10 @@ The application sells and manages professional email hosting for domains that cu
 - Prepaid USD account balance with admin-only crediting
 - Orders, invoices, transactions and renewal reminders
 - Automatic renewal, seven-day grace period, suspension and recovery
-- Mailu domain, mailbox and alias provisioning
+- Webmail, IMAP/SMTP access, filtering rules and routing features
+- Managed mail domain, mailbox and alias provisioning
 - DNS record display for MX, SPF, DKIM, DMARC, TLSA and autoconfiguration
-- Retryable Mailu provisioning jobs and audit logs
+- Retryable provisioning jobs and audit logs
 - Privacy Policy and Terms of Service matching the actual platform behavior
 
 ## Architecture
@@ -30,18 +31,18 @@ Browser
   -> React/Vite frontend
   -> Nginx same-origin API proxy
   -> Supabase Edge Functions + PostgreSQL (all product objects use the eh_ prefix)
-  -> Mailu API at mail.kmerhosting.com
+  -> Managed mail API at mail.kmerhosting.com
 ```
 
-The browser never uses Supabase Auth and never receives Mailu or Mailtrap credentials. User accounts are stored in `eh_users`, sessions in `eh_sessions`, and private database access is performed by the custom-authenticated Edge API. Wallet balances can only be changed through the protected admin function.
+The browser never uses Supabase Auth and never receives mail-service or notification credentials. User accounts are stored in `eh_users`, sessions in `eh_sessions`, and private database access is performed by the custom-authenticated Edge API. Wallet balances can only be changed through the protected admin function.
 
 ## Requirements
 
 - Node.js 22 or newer
 - A Supabase project
 - Supabase CLI for backend deployment
-- A working Mailu installation with its REST API enabled
-- A Mailu API token
+- A working managed mail installation with its REST API enabled
+- A mail service API token
 
 ## Frontend setup
 
@@ -90,7 +91,7 @@ supabase functions deploy eh-mail-api --no-verify-jwt
 supabase functions deploy eh-automation --no-verify-jwt
 ```
 
-Set the Mailu secret once. The Mailtrap token is stored in Vault and is consumed only by the Edge API/worker:
+Set the mail service secret once. The notification token is stored in Vault and is consumed only by the Edge API/worker:
 
 ```bash
 supabase secrets set \
@@ -98,7 +99,7 @@ supabase secrets set \
   MAILU_API_TOKEN='REPLACE_WITH_THE_MAILU_API_TOKEN'
 ```
 
-Configure the project URL used by the internal Mailu worker:
+Configure the project URL used by the internal mail worker:
 
 ```sql
 insert into public.eh_config(key, value)
@@ -111,23 +112,23 @@ The migration creates these schedules:
 - renewal reminders every day;
 - due renewal processing every 15 minutes;
 - expired grace-period suspension every 15 minutes;
-- Mailu provisioning worker every minute.
+- Mail provisioning worker every minute.
 
 ## First administrator
 
-The first administrator is an `eh_users` row. Use the Email Hosting “Forgot password?” flow for the configured administrator email; the one-time reset code is delivered by Mailtrap. No Supabase Auth account or redirect URL is required.
+The first administrator is an `eh_users` row. Use the Email Hosting “Forgot password?” flow for the configured administrator email; the one-time reset code is delivered by the transactional email service. No Supabase Auth account or redirect URL is required.
 
 The admin dashboard can then credit customer USD balances and retry automation.
 
-## Mailu configuration
+## Managed mail configuration
 
-The Edge Functions expect the stable Mailu v1 administrative API under:
+The Edge Functions expect the stable administrative API under:
 
 ```text
 https://mail.kmerhosting.com/api/v1
 ```
 
-Mailu must have its API enabled and its API token must match `MAILU_API_TOKEN` in Supabase secrets. The platform uses Mailu to:
+The mail service must have its API enabled and its API token must match `MAILU_API_TOKEN` in Supabase secrets. The platform uses the service to:
 
 - create domains;
 - generate DKIM data;
@@ -157,10 +158,10 @@ docker run --rm -p 8080:80 kmerhosting-email
 
 - Domain ownership is asserted by the customer during checkout; DNS publication proves practical control.
 - No public payment gateway exists. Support verifies payment outside this platform, then an administrator adds USD credit.
-- A purchase with insufficient credit remains an unpaid order and does not create a Mailu service.
-- Mailbox passwords are sent directly to Mailu and are not stored in plaintext by this application.
+- A purchase with insufficient credit remains an unpaid order and does not create a managed mail service.
+- Mailbox passwords are sent directly to the mail service and are not stored in plaintext by this application.
 - Mailbox content is not exposed through the Supabase API.
-- Backups refer to the configured Mailu backup infrastructure. They do not replace independent customer archives.
+- Backups refer to the configured mail infrastructure. They do not replace independent customer archives.
 
 ## Pricing risk notice
 

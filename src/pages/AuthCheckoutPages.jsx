@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { domainStoreUrl, supportEmail } from '../config'
@@ -6,6 +6,34 @@ import { callApi, callMailApi, purchaseService } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { fallbackPlans, formatBytes, formatMoney, quote, terms } from '../lib/pricing'
 import { Logo, Notice, PublicLayout } from '../components/PublicLayout'
+
+function OtpCodeInput({ value, onChange }) {
+  const refs = useRef([])
+  const digits = String(value || '').padEnd(6, ' ').slice(0, 6).split('')
+
+  function setDigit(index, input) {
+    const digit = input.replace(/\D/g, '').slice(-1)
+    const next = digits.map((item) => item.trim())
+    next[index] = digit
+    onChange(next.join(''))
+    if (digit && index < 5) refs.current[index + 1]?.focus()
+  }
+
+  function handleKeyDown(index, event) {
+    if (event.key === 'Backspace' && !digits[index].trim() && index > 0) refs.current[index - 1]?.focus()
+    if (event.key === 'ArrowLeft' && index > 0) refs.current[index - 1]?.focus()
+    if (event.key === 'ArrowRight' && index < 5) refs.current[index + 1]?.focus()
+  }
+
+  function handlePaste(event) {
+    event.preventDefault()
+    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
+    onChange(pasted)
+    refs.current[Math.min(pasted.length, 5)]?.focus()
+  }
+
+  return <div className="otp-field"><span className="field-caption">Verification code</span><div className="otp-inputs" role="group" aria-label="Six-digit verification code">{digits.map((digit, index) => <input key={index} ref={(element) => { refs.current[index] = element }} className="otp-digit" inputMode="numeric" pattern="[0-9]" maxLength="1" value={digit.trim()} onChange={(event) => setDigit(index, event.target.value)} onKeyDown={(event) => handleKeyDown(index, event)} onPaste={handlePaste} aria-label={`Verification code digit ${index + 1}`} required={index === 0} />)}</div></div>
+}
 
 function AuthPage({ mode }) {
   const { user, configured, refreshAuth } = useAuth()
@@ -53,7 +81,9 @@ function AuthPage({ mode }) {
 
   async function requestReset() { setResetMode(true); setChallenge(null); setCode(''); setMessage('Enter your account email to receive a reset code.') }
   const resetSubmit = resetMode ? submit : (challenge ? verify : submit)
-  return <PublicLayout><section className="auth-section"><form className="auth-card" onSubmit={resetSubmit}><Logo /><h1>{resetMode ? challenge ? 'Set a new password' : 'Reset your password' : challenge ? 'Verify your email' : mode === 'register' ? 'Create your account' : 'Sign in'}</h1><p>{resetMode ? 'We will send a one-time code through Mailtrap.' : challenge ? 'Enter the six-digit code sent by email.' : mode === 'register' ? 'Use an address where you can receive service and renewal notices.' : 'Manage your domains, mailboxes and billing.'}</p>{!configured && <Notice tone="warning">The frontend environment is not configured.</Notice>}{resetMode || challenge ? <><label>Email address<input type="email" required disabled={Boolean(challenge)} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>{challenge && <><label>Verification code<input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" required value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} /></label><label>New password<input type="password" minLength="8" required value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /></label></>}</> : <>{mode === 'register' && <label>Full name<input required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label>}<label>Email address<input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Password<input type="password" minLength="8" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label></>}{message && <div className="form-message">{message}</div>}<button className="button full" disabled={busy}>{busy ? 'Please wait…' : resetMode ? challenge ? 'Update password' : 'Send reset code' : challenge ? 'Verify account' : mode === 'register' ? 'Create account' : 'Sign in'}</button>{!resetMode && !challenge && mode === 'login' && <button type="button" className="text-button" onClick={requestReset}>Forgot password?</button>}{!resetMode && !challenge && <small>{mode === 'register' ? <>Already registered? <Link to="/login">Sign in</Link></> : <>New customer? <Link to="/register">Create an account</Link></>}</small>}{resetMode && <button type="button" className="text-button" onClick={() => { setResetMode(false); setChallenge(null); setMessage('') }}>Back to sign in</button>}</form></section></PublicLayout>
+  const title = resetMode ? challenge ? 'Set a new password' : 'Reset your password' : challenge ? 'Verify your email' : mode === 'register' ? 'Create your account' : 'Sign in'
+  const description = resetMode ? 'We will send a one-time code to your account email.' : challenge ? 'Enter the six-digit code sent to your email.' : mode === 'register' ? 'Create a simple account to manage email services and billing.' : 'Manage your domains, mailboxes and billing.'
+  return <PublicLayout><section className="auth-section"><form className="auth-card" onSubmit={resetSubmit}><Logo /><div className="auth-copy"><span className="eyebrow">{mode === 'register' && !challenge && !resetMode ? 'Get started' : 'Account access'}</span><h1>{title}</h1><p>{description}</p></div>{!configured && <Notice tone="warning">The frontend environment is not configured.</Notice>}{resetMode || challenge ? <><label>Email address<input type="email" required disabled={Boolean(challenge)} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>{challenge && <><OtpCodeInput value={code} onChange={setCode} /><label>New password<input type="password" minLength="8" required value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} /></label></>}</> : <>{mode === 'register' && <label>Full name<input required value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label>}<label>Email address<input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Password<input type="password" minLength="8" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label></>}{message && <div className="form-message">{message}</div>}<button className="button full" disabled={busy || (challenge && code.length !== 6)}>{busy ? 'Please wait…' : resetMode ? challenge ? 'Update password' : 'Send reset code' : challenge ? 'Verify account' : mode === 'register' ? 'Create account' : 'Sign in'}</button>{!resetMode && !challenge && mode === 'login' && <button type="button" className="text-button" onClick={requestReset}>Forgot password?</button>}{!resetMode && !challenge && <small>{mode === 'register' ? <>Already registered? <Link to="/login">Sign in</Link></> : <>New customer? <Link to="/register">Create an account</Link></>}</small>}{resetMode && <button type="button" className="text-button" onClick={() => { setResetMode(false); setChallenge(null); setMessage('') }}>Back to sign in</button>}</form></section></PublicLayout>
 }
 
 function CheckoutPage() {
