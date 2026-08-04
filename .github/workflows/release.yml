@@ -1,0 +1,29 @@
+name: Publish v0.1.0
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create initial release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view v0.1.0 >/dev/null 2>&1; then
+            echo "Release v0.1.0 already exists."
+          else
+            gh release create v0.1.0 \
+              --target "$GITHUB_SHA" \
+              --title "KmerHosting Email Hosting v0.1.0" \
+              --notes "Initial release of the KmerHosting Email Hosting platform. Includes the English public website, four pricing plans, Supabase authentication and prefixed eh_ schema, prepaid USD billing, customer dashboard, Mailu domain/mailbox provisioning, DNS guidance, renewal reminders, automated suspension/recovery, Docker and Vercel deployment support. Domain registration is not included. Set MAILU_API_TOKEN as a Supabase Edge Function secret before provisioning real mail services."
