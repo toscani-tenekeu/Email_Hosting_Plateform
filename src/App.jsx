@@ -1,8 +1,14 @@
 import { Link, Route, Routes } from 'react-router-dom'
 import { PublicLayout } from './components/PublicLayout'
 import { Protected } from './components/DashboardLayout'
-import { HomePage, PricingPage, FeaturesPage, HowItWorksPage, SupportPage, LegalPage, AuthPage, CheckoutPage } from './pages/PublicPages'
-import { OverviewPage, DomainsPage, MailboxesPage, DnsPage, BillingPage, NotificationsPage, SettingsPage, DashboardSupportPage, AdminPage } from './pages/DashboardPages'
+import { HomePage } from './pages/HomePage'
+import { PricingPage } from './pages/PricingPages'
+import { FeaturesPage, HowItWorksPage, SupportPage, LegalPage } from './pages/InfoPages'
+import { AuthPage, CheckoutPage } from './pages/AuthCheckoutPages'
+import { OverviewPage, DomainsPage } from './pages/OverviewDomainsPages'
+import { MailboxesPage, DnsPage } from './pages/MailboxesDnsPages'
+import { BillingPage, NotificationsPage } from './pages/BillingNotificationsPages'
+import { SettingsPage, DashboardSupportPage, AdminPage } from './pages/SettingsAdminPages'
 
 function NotFound() { return <PublicLayout><section className="page-hero"><div className="container"><h1>Page not found</h1><Link className="button" to="/">Return home</Link></div></section></PublicLayout> }
 
