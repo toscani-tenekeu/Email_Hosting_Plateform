@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Mail, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
-import { callMailApi } from '../lib/api'
+import { callApi, callMailApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { formatBytes } from '../lib/pricing'
-import { supabase } from '../lib/supabase'
 import { DashboardLayout, EmptyState, PageTitle, StatusBadge } from '../components/DashboardLayout'
 import { Notice } from '../components/PublicLayout'
 import { useDashboardData } from './useDashboardData'
@@ -32,14 +31,15 @@ function DnsPage() {
   const [records, setRecords] = useState([])
   const [selected, setSelected] = useState('')
   async function load() {
-    if (!supabase || !user) return
-    const serviceResult = await supabase.from('eh_services').select('*').order('created_at')
-    setServices(serviceResult.data || [])
+    if (!user) return
+    const dashboard = await callApi('dashboard')
+    const serviceResult = { data: dashboard.services || [] }
+    setServices(serviceResult.data)
     const id = selected || serviceResult.data?.[0]?.id || ''
     setSelected(id)
     if (id) {
-      const recordResult = await supabase.from('eh_dns_records').select('*').eq('service_id', id).order('record_type')
-      setRecords(recordResult.data || [])
+      const recordResult = await callApi('service_dns', { serviceId: id })
+      setRecords(recordResult.records || [])
     }
   }
   useEffect(() => { load() }, [user?.id, selected])

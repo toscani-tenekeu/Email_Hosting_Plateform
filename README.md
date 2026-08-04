@@ -13,7 +13,8 @@ The application sells and manages professional email hosting for domains that cu
 - Mail Enterprise: $9/month, unlimited mailboxes, 10 GB per mailbox, $0.005/GB/month additional storage
 - Terms of 1, 3, 6, 12, 24 and 36 months
 - Discounts of 10% for 12 months, 20% for 24 months and 30% for 36 months
-- Supabase authentication and Row Level Security
+- Application-managed `eh_users`, sessions and one-time verification codes
+- Mailtrap transactional email delivery from server-side Edge Functions
 - Prepaid USD account balance with admin-only crediting
 - Orders, invoices, transactions and renewal reminders
 - Automatic renewal, seven-day grace period, suspension and recovery
@@ -27,12 +28,12 @@ The application sells and manages professional email hosting for domains that cu
 ```text
 Browser
   -> React/Vite frontend
-  -> Supabase Auth + PostgreSQL (all product objects use the eh_ prefix)
-  -> Supabase Edge Functions
+  -> Nginx same-origin API proxy
+  -> Supabase Edge Functions + PostgreSQL (all product objects use the eh_ prefix)
   -> Mailu API at mail.kmerhosting.com
 ```
 
-The Mailu API token is never sent to the browser. Customers can only access records permitted by RLS. Wallet balances can only be changed through the protected admin function.
+The browser never uses Supabase Auth and never receives Mailu or Mailtrap credentials. User accounts are stored in `eh_users`, sessions in `eh_sessions`, and private database access is performed by the custom-authenticated Edge API. Wallet balances can only be changed through the protected admin function.
 
 ## Requirements
 
@@ -55,7 +56,6 @@ npm run dev
 Set the following frontend variables:
 
 ```env
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_ME
 VITE_SITE_URL=https://email-hosting.kmerhosting.com
 VITE_DOMAIN_STORE_URL=https://domain.kmerhosting.com
@@ -85,12 +85,12 @@ Link the repository to the target Supabase project, then apply the migrations an
 
 ```bash
 supabase link --project-ref YOUR_PROJECT_REF
-supabase db push
-supabase functions deploy eh-mail-api
+supabase migration list
+supabase functions deploy eh-mail-api --no-verify-jwt
 supabase functions deploy eh-automation --no-verify-jwt
 ```
 
-Set the Mailu secrets once:
+Set the Mailu secret once. The Mailtrap token is stored in Vault and is consumed only by the Edge API/worker:
 
 ```bash
 supabase secrets set \
@@ -115,30 +115,9 @@ The migration creates these schedules:
 
 ## First administrator
 
-Create or invite the account through the official Supabase Auth tooling, then promote it once from the Supabase SQL editor:
-
-```sql
-update public.eh_profiles
-set role = 'admin'
-where lower(email) = lower('YOUR_ADMIN_EMAIL');
-```
+The first administrator is an `eh_users` row. Use the Email Hosting “Forgot password?” flow for the configured administrator email; the one-time reset code is delivered by Mailtrap. No Supabase Auth account or redirect URL is required.
 
 The admin dashboard can then credit customer USD balances and retry automation.
-
-## Supabase Auth settings
-
-Add these URLs to the allowed redirect URLs:
-
-```text
-https://email-hosting.kmerhosting.com/**
-http://localhost:4173/**
-```
-
-Configure the production site URL as:
-
-```text
-https://email-hosting.kmerhosting.com
-```
 
 ## Mailu configuration
 
@@ -167,7 +146,6 @@ Import the GitHub repository, add the `VITE_*` variables, and attach `email-host
 
 ```bash
 docker build \
-  --build-arg VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co \
   --build-arg VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_REPLACE_ME \
   --build-arg VITE_SITE_URL=https://email-hosting.kmerhosting.com \
   -t kmerhosting-email .
