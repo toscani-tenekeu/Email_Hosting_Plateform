@@ -10,14 +10,14 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 async function mailuToken() {
   if (MAILU_API_TOKEN) return MAILU_API_TOKEN;
   const { data, error } = await admin.rpc("eh_get_mailu_api_token");
-  if (error || typeof data !== "string" || !data) throw new Error("Mailu API token is not configured on the server.");
+  if (error || typeof data !== "string" || !data) throw new Error("The mail service API token is not configured on the server.");
   return data;
 }
 async function mailu(path: string, init: RequestInit = {}) {
   const token = await mailuToken();
   const result = await fetch(`${MAILU_API_BASE}${path}`, { ...init, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...(init.headers ?? {}) } });
   const text = await result.text(); let payload: unknown = null; try { payload = text ? JSON.parse(text) : null; } catch { payload = text; }
-  if (!result.ok) { const message = typeof payload === "object" && payload && "message" in payload ? String((payload as { message: unknown }).message) : `Mailu returned HTTP ${result.status}`; const error = new Error(message) as Error & { status?: number }; error.status = result.status; throw error; }
+  if (!result.ok) { const message = typeof payload === "object" && payload && "message" in payload ? String((payload as { message: unknown }).message) : `The mail service returned HTTP ${result.status}`; const error = new Error(message) as Error & { status?: number }; error.status = result.status; throw error; }
   return payload;
 }
 async function configValue(key: string, fallback: string) { const { data } = await admin.from("eh_config").select("value").eq("key", key).maybeSingle(); return String(data?.value || fallback); }

@@ -47,6 +47,13 @@ img { max-width: 100%; }
 .icon-button { width: 38px; height: 38px; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); }
 .icon-button.danger { color: var(--danger); }
 
+/* Flat controls: keep actions quiet and predictable across the platform. */
+.button, .icon-button, .term-picker button.active { box-shadow: none; transition: background-color .18s ease, border-color .18s ease, color .18s ease; }
+.button:hover { transform: none; }
+.public-nav a.button:hover { color: #fff; }
+.dashboard-sidebar nav a.active { color: #fff; }
+.dashboard-sidebar nav a.active svg { color: #dce4ff; }
+
 .hero { padding: 92px 0 76px; background: radial-gradient(circle at 80% 10%, #dce5ff 0, transparent 30%), linear-gradient(180deg,#fff,#f5f7fb); overflow: hidden; }
 .hero-grid { display: grid; grid-template-columns: 1.02fr .98fr; gap: 70px; align-items: center; }
 .eyebrow { display: inline-flex; align-items: center; gap: 7px; color: var(--primary); font-size: 13px; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; }

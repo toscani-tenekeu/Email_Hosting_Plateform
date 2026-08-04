@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, Bell, CircleAlert, Database, ExternalLink, Inbox, LockKeyhole, Mail, RefreshCw, ShieldCheck, Sparkles, Users, WalletCards } from 'lucide-react'
+import { ArrowRight, Bell, CircleAlert, Database, ExternalLink, Inbox, LockKeyhole, Mail, RefreshCw, ShieldCheck, Users, WalletCards } from 'lucide-react'
 import { domainStoreUrl } from '../config'
 import { PublicLayout } from '../components/PublicLayout'
 import { PricingSection } from './PricingPages'
@@ -10,7 +10,7 @@ function HomePage() {
       <section className="hero">
         <div className="container hero-grid">
           <div>
-            <div className="eyebrow"><Sparkles size={16} /> Business email on your domain</div>
+            <div className="eyebrow">Business email on your domain</div>
             <h1>Professional email hosting without the workspace complexity.</h1>
             <p className="lead">Create secure mailboxes, aliases, forwarding rules and automatic replies for a domain you already own. Billing and renewals run from your prepaid USD balance.</p>
             <div className="hero-actions">
@@ -50,14 +50,14 @@ function HomePage() {
 
       <section className="section">
         <div className="container">
-          <div className="section-heading"><span>Simple operations</span><h2>Everything required to run company email.</h2><p>The platform manages the commercial lifecycle while Mailu provides the underlying mail service.</p></div>
+          <div className="section-heading"><span>Simple operations</span><h2>Everything required to run company email.</h2><p>The platform manages the commercial lifecycle while the managed mail service handles delivery and mailbox access.</p></div>
           <div className="feature-grid">
             {[
               [Users, 'Mailbox management', 'Create, suspend and remove professional accounts within your plan limits.'],
               [ShieldCheck, 'Domain authentication', 'DKIM is generated for your domain, with clear SPF and DMARC setup guidance.'],
               [ArrowRight, 'Aliases and forwarding', 'Route role addresses such as sales@ and support@ to the right mailbox.'],
               [Bell, 'Renewal reminders', 'Receive reminders before renewal and automatic notifications when credit is insufficient.'],
-              [Database, 'Automatic backups', 'Mailbox data is protected by the configured Mailu backup policy.'],
+              [Database, 'Automatic backups', 'Mailbox data is protected by the configured backup policy.'],
               [WalletCards, 'Prepaid USD billing', 'Orders and renewals are deducted from your account balance. Credit is added by support.'],
             ].map(([Icon, title, text]) => <article className="feature-card" key={title}><Icon /><h3>{title}</h3><p>{text}</p></article>)}
           </div>
