@@ -1,0 +1,47 @@
+@media (max-width: 1040px) {
+  .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+  .hero-grid { gap: 35px; }
+  .feature-grid { grid-template-columns: repeat(2, 1fr); }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .dashboard-shell { grid-template-columns: 220px 1fr; }
+}
+
+@media (max-width: 780px) {
+  .container { width: min(100% - 28px, 1160px); }
+  .mobile-menu, .mobile-close, .dash-menu { display: inline-grid !important; }
+  .public-nav { display: none; position: absolute; left: 14px; right: 14px; top: 67px; padding: 17px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: var(--shadow); flex-direction: column; align-items: stretch; }
+  .public-nav.open { display: flex; }
+  .public-nav a { min-height: 39px; display: flex; align-items: center; }
+  .hero { padding: 65px 0; }
+  .hero-grid, .steps-grid, .checkout-grid, .dashboard-columns, .billing-balance { grid-template-columns: 1fr; }
+  .mail-preview { transform: none; }
+  .feature-grid, .feature-groups, .dns-list { grid-template-columns: 1fr; }
+  .pricing-grid { grid-template-columns: 1fr; }
+  .trust-row { flex-direction: column; align-items: flex-start; }
+  .footer-grid { grid-template-columns: 1fr; gap: 30px; }
+  .order-summary { position: static; }
+  .dashboard-shell { display: block; }
+  .dashboard-sidebar { position: fixed; left: -280px; width: 260px; transition: left .2s ease; box-shadow: 15px 0 50px rgba(0,0,0,.25); }
+  .dashboard-sidebar.open { left: 0; }
+  .dashboard-content { padding: 23px 15px; }
+  .dashboard-topbar { padding: 0 15px; }
+  .dashboard-topbar > div { display: none; }
+  .dashboard-title { flex-direction: column; }
+  .dashboard-title .button { width: 100%; }
+  .steps-grid { gap: 40px; }
+  .steps-grid h2 { font-size: 34px; }
+  .mail-preview-body { grid-template-columns: 105px 1fr; }
+  .preview-content { padding: 20px 14px; }
+  .preview-row { grid-template-columns: 34px 1fr; }
+  .preview-row time { display: none; }
+}
+
+@media (max-width: 500px) {
+  h1 { font-size: 40px; }
+  .hero-actions .button { width: 100%; }
+  .stats-grid { grid-template-columns: 1fr; }
+  .term-picker { width: 100%; }
+  .term-picker button { flex: 1 1 90px; }
+  .auth-card { padding: 25px 20px; }
+  .support-card { padding: 30px 20px; }
+}
