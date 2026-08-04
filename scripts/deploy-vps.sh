@@ -20,7 +20,6 @@ source "$FRONTEND_ENV_FILE"
 set +a
 
 for required_var in \
-  VITE_SUPABASE_URL \
   VITE_SUPABASE_PUBLISHABLE_KEY \
   VITE_SITE_URL \
   VITE_DOMAIN_STORE_URL \

@@ -1,52 +1,41 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { isSupabaseConfigured, supabase } from './supabase'
+import { callApi } from './api'
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null)
-  const [profile, setProfile] = useState(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  async function loadProfile(userId) {
-    if (!supabase || !userId) {
-      setProfile(null)
-      return
+  async function refreshAuth() {
+    try {
+      const result = await callApi('auth_me')
+      setUser(result.user || null)
+      return result.user || null
+    } catch {
+      setUser(null)
+      return null
+    } finally {
+      setLoading(false)
     }
-    const { data } = await supabase.from('eh_profiles').select('*').eq('id', userId).maybeSingle()
-    setProfile(data ?? null)
   }
 
-  useEffect(() => {
-    if (!supabase) {
-      setLoading(false)
-      return undefined
-    }
-    supabase.auth.getSession().then(async ({ data }) => {
-      setSession(data.session)
-      await loadProfile(data.session?.user?.id)
-      setLoading(false)
-    })
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
-      setSession(nextSession)
-      await loadProfile(nextSession?.user?.id)
-      setLoading(false)
-    })
-    return () => listener.subscription.unsubscribe()
-  }, [])
+  useEffect(() => { refreshAuth() }, [])
 
   const value = useMemo(() => ({
-    configured: isSupabaseConfigured,
-    session,
-    user: session?.user ?? null,
-    profile,
+    configured: true,
+    session: user ? { user } : null,
+    user,
+    profile: user,
     loading,
-    isAdmin: profile?.role === 'admin',
-    refreshProfile: () => loadProfile(session?.user?.id),
+    isAdmin: user?.role === 'admin',
+    refreshProfile: refreshAuth,
+    refreshAuth,
     async signOut() {
-      if (supabase) await supabase.auth.signOut()
+      await callApi('auth_logout').catch(() => undefined)
+      setUser(null)
     },
-  }), [session, profile, loading])
+  }), [user, loading])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

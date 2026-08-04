@@ -1,22 +1,20 @@
-import { supabase } from './supabase'
+const API_PATH = '/api/eh'
+const PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || ''
 
-export async function callMailApi(action, payload = {}) {
-  if (!supabase) throw new Error('Supabase is not configured.')
-  const { data, error } = await supabase.functions.invoke('eh-mail-api', {
-    body: { action, ...payload },
+export async function callApi(action, payload = {}) {
+  const response = await fetch(API_PATH, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...(PUBLISHABLE_KEY ? { apikey: PUBLISHABLE_KEY } : {}) },
+    body: JSON.stringify({ action, ...payload }),
   })
-  if (error) throw error
-  if (!data?.ok) throw new Error(data?.error || 'The email operation failed.')
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok || !data?.ok) throw new Error(data?.error || 'The request failed.')
   return data
 }
 
-export async function purchaseService(planId, termMonths, domainName) {
-  if (!supabase) throw new Error('Supabase is not configured.')
-  const { data, error } = await supabase.rpc('eh_purchase_service', {
-    p_plan_id: planId,
-    p_term_months: Number(termMonths),
-    p_domain_name: domainName,
-  })
-  if (error) throw error
-  return data
+export const callMailApi = callApi
+
+export function purchaseService(planId, termMonths, domainName) {
+  return callApi('purchase_service', { planId, termMonths: Number(termMonths), domainName })
 }

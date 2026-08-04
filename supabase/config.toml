@@ -1,7 +1,7 @@
 project_id = "email-hosting"
 
 [functions.eh-mail-api]
-verify_jwt = true
+verify_jwt = false
 
 [functions.eh-automation]
 verify_jwt = false
