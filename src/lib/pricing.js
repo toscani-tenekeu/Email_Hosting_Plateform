@@ -140,6 +140,7 @@ export function formatMoney(value) {
     style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
   }).format(Number(value || 0))
 }
 
