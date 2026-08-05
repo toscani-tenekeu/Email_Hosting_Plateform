@@ -50,6 +50,7 @@ function DnsPage() {
   const [records, setRecords] = useState([])
   const [selected, setSelected] = useState('')
   const [summary, setSummary] = useState({ verifiedCount: 0, totalCount: 0, allVerified: false })
+  const [nameserverCheck, setNameserverCheck] = useState({ ok: false, required: ['dane.ns.cloudflare.com', 'olivia.ns.cloudflare.com'], nameservers: [], missing: [] })
   const [checking, setChecking] = useState(false)
   const [sending, setSending] = useState(false)
   const [copiedId, setCopiedId] = useState('')
@@ -72,16 +73,17 @@ function DnsPage() {
       const result = await callApi('verify_dns', { serviceId })
       setRecords(result.records || [])
       setSummary(result.summary || { verifiedCount: 0, totalCount: 0, allVerified: false })
+      setNameserverCheck(result.nameserverCheck || { ok: false, required: ['dane.ns.cloudflare.com', 'olivia.ns.cloudflare.com'], nameservers: [], missing: [] })
     } catch (error) { setMessage(error.message) } finally { setChecking(false) }
   }, [selected])
 
   useEffect(() => { loadServices() }, [loadServices])
   useEffect(() => { if (selected) verify(selected) }, [selected, verify])
   useEffect(() => {
-    if (!selected || !records.length || summary.allVerified) return undefined
+    if (!selected || !records.length || (summary.allVerified && nameserverCheck.ok)) return undefined
     const timer = setInterval(() => { if (document.visibilityState === 'visible') verify(selected) }, 15000)
     return () => clearInterval(timer)
-  }, [selected, records.length, summary.allVerified, verify])
+  }, [selected, records.length, summary.allVerified, nameserverCheck.ok, verify])
 
   async function sync() {
     try { await callMailApi('sync_dns', { serviceId: selected }); await verify(selected) } catch (error) { setMessage(error.message) }
@@ -107,11 +109,23 @@ function DnsPage() {
   async function sendHelp() {
     if (!selected) return
     setSending(true); setMessage('')
-    try { await callApi('send_dns_help', { serviceId: selected }); setMessage('Your DNS configuration and CSV have been sent to KmerHosting Support. You will receive an email from the support team.') } catch (error) { setMessage(error.message) } finally { setSending(false) }
+    try {
+      const latest = await callApi('verify_dns', { serviceId: selected })
+      setRecords(latest.records || [])
+      setSummary(latest.summary || { verifiedCount: 0, totalCount: 0, allVerified: false })
+      setNameserverCheck(latest.nameserverCheck || nameserverCheck)
+      if (!latest.nameserverCheck?.ok) {
+        const required = (latest.nameserverCheck?.required || nameserverCheck.required).join(' and ')
+        setMessage(`Before requesting support, set these nameservers at your registrar: ${required}.`)
+        return
+      }
+      await callApi('send_dns_help', { serviceId: selected })
+      setMessage('Your DNS configuration and CSV have been sent to KmerHosting Support. You will receive an email from the support team.')
+    } catch (error) { setMessage(error.message) } finally { setSending(false) }
   }
 
   const domain = services.find((item) => item.id === selected)?.domain_name || ''
-  return <DashboardLayout><PageTitle title="DNS setup" text="Publish these records at the DNS provider that manages your domain." action={<div className="page-actions"><button className="button secondary" onClick={download} disabled={!records.length}><Download size={17} /> Download CSV</button><button className="button" onClick={sendHelp} disabled={!selected || sending}><Send size={17} /> {sending ? 'Sending to Support…' : 'Submit DNS setup to Support'}</button></div>} /><Notice tone={summary.allVerified ? 'success' : 'warning'}>{summary.allVerified ? <><Check size={16} /> All DNS records for {domain} are publicly resolved.</> : <>DNS verification is automatic every 15 seconds while records are unresolved ({summary.verifiedCount}/{summary.totalCount} verified). Need help? Support is free.</>}</Notice>{message && <div className="form-message">{message}</div>}<section className="panel"><div className="panel-head"><label className="inline-select">Domain<select value={selected} onChange={(e) => setSelected(e.target.value)}>{services.map((item) => <option key={item.id} value={item.id}>{item.domain_name}</option>)}</select></label><button className="button secondary" onClick={sync} disabled={!selected || checking}><RefreshCw size={17} className={checking ? 'spin' : ''} /> Refresh DNS records</button></div>{records.length ? <div className="dns-list">{records.map((record) => <article key={record.id}><div><StatusBadge value={record.status} /><b>{record.record_type}</b></div><span>{record.hostname}</span><div className="record-value-row"><code>{record.value}</code><button className="icon-button" onClick={() => copyValue(record)} title="Copy DNS record" aria-label={`Copy ${record.record_type} record`}>{copiedId === record.id ? <Check size={16} /> : <Copy size={16} />}</button></div>{record.priority != null && <small>Priority: {record.priority}</small>}</article>)}</div> : <EmptyState icon={Server} title="No DNS records available" text="Provision the domain or refresh its DNS details." />}</section></DashboardLayout>
+  return <DashboardLayout><PageTitle title="DNS setup" text="Publish these records at the DNS provider that manages your domain." action={<div className="page-actions"><button className="button secondary" onClick={download} disabled={!records.length}><Download size={17} /> Download CSV</button><button className="button" onClick={sendHelp} disabled={!selected || sending || !nameserverCheck.ok}><Send size={17} /> {sending ? 'Sending to Support…' : 'Submit DNS setup to Support'}</button></div>} /><Notice tone={summary.allVerified ? 'success' : 'warning'}>{summary.allVerified ? <><Check size={16} /> All DNS records for {domain} are publicly resolved.</> : <>DNS verification is automatic every 15 seconds while records are unresolved ({summary.verifiedCount}/{summary.totalCount} verified). Need help? Support is free.</>}</Notice><Notice tone={nameserverCheck.ok ? 'success' : 'warning'}>{nameserverCheck.ok ? <><Check size={16} /> Required nameservers are active: {nameserverCheck.required.join(' and ')}.</> : <>Before requesting free support configuration, update your registrar nameservers to <b>{nameserverCheck.required.join(' and ')}</b>. Support requests are accepted only after this delegation is publicly detected.</>}</Notice>{message && <div className="form-message">{message}</div>}<section className="panel"><div className="panel-head"><label className="inline-select">Domain<select value={selected} onChange={(e) => { setSelected(e.target.value); setNameserverCheck({ ok: false, required: ['dane.ns.cloudflare.com', 'olivia.ns.cloudflare.com'], nameservers: [], missing: [] }) }}>{services.map((item) => <option key={item.id} value={item.id}>{item.domain_name}</option>)}</select></label><button className="button secondary" onClick={sync} disabled={!selected || checking}><RefreshCw size={17} className={checking ? 'spin' : ''} /> Refresh DNS records</button></div>{records.length ? <div className="dns-list">{records.map((record) => <article key={record.id}><div><StatusBadge value={record.status} /><b>{record.record_type}</b></div><span>{record.hostname}</span><div className="record-value-row"><code>{record.value}</code><button className="icon-button" onClick={() => copyValue(record)} title="Copy DNS record" aria-label={`Copy ${record.record_type} record`}>{copiedId === record.id ? <Check size={16} /> : <Copy size={16} />}</button></div>{record.priority != null && <small>Priority: {record.priority}</small>}</article>)}</div> : <EmptyState icon={Server} title="No DNS records available" text="Provision the domain or refresh its DNS details." />}</section></DashboardLayout>
 }
 
 export { MailboxesPage, DnsPage }
