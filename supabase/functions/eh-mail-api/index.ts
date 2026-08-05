@@ -10,6 +10,7 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const MAILU_API_BASE = (Deno.env.get("MAILU_API_BASE") ?? "https://mail.kmerhosting.com/api/v1").replace(/\/$/, "");
 const MAILU_API_TOKEN = Deno.env.get("MAILU_API_TOKEN") ?? "";
+const SUPPORT_NAMESERVERS = ["dane.ns.cloudflare.com", "olivia.ns.cloudflare.com"];
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 type Json = Record<string, unknown>;
 type AppUser = { id: string; email: string; full_name: string; company_name: string | null; role: string; status: string };
@@ -101,6 +102,35 @@ async function mailuToken() { if (MAILU_API_TOKEN) return MAILU_API_TOKEN; const
 async function mailu(path: string, init: RequestInit = {}) { const result = await fetch(`${MAILU_API_BASE}${path}`, { ...init, headers: { Authorization: `Bearer ${await mailuToken()}`, "Content-Type": "application/json", ...(init.headers ?? {}) } }); const text = await result.text(); let payload: unknown = null; try { payload = text ? JSON.parse(text) : null; } catch { payload = text; } if (!result.ok) { const error = new Error(typeof payload === "object" && payload && "message" in payload ? String((payload as { message: unknown }).message) : `The mail service returned HTTP ${result.status}`) as Error & { status?: number }; error.status = result.status; throw error; } return payload as Record<string, unknown>; }
 function dnsRows(serviceId: string, domain: string, details: Record<string, unknown>) { const rows: Array<Record<string, unknown>> = []; const add = (recordType: string, hostname: string, value: unknown, priority: number | null = null) => { if (value == null || value === "") return; if (Array.isArray(value)) { for (const item of value) add(recordType, hostname, item, priority); return; } for (const item of String(value).split("\n").map((v) => v.trim()).filter(Boolean)) rows.push({ service_id: serviceId, record_type: recordType, hostname, value: item, priority, status: "pending" }); }; add("MX", domain, details.dns_mx, 10); add("TXT", domain, details.dns_spf); add("TXT", domain, details.dns_dmarc); add("TXT", domain, details.dns_dmarc_report); add("TXT", domain, details.dns_dkim); add("TLSA", `_25._tcp.${domain}`, details.dns_tlsa); add("AUTOCONFIG", domain, details.dns_autoconfig); return rows; }
 function normalizeDnsValue(value: unknown) { return String(value ?? "").replace(/"\s+"/g, "").replaceAll('"', "").replace(/\.$/, "").replace(/\s+/g, " ").trim().toLowerCase(); }
+function normalizeNameserver(value: unknown) { return String(value ?? "").replace(/\.$/, "").trim().toLowerCase(); }
+async function verifySupportNameservers(domain: string) {
+  const nameservers = new Set<string>();
+  const checkedZones = new Set<string>();
+  let zone = normalizeNameserver(domain);
+  try {
+    for (let depth = 0; depth < 4 && zone && !checkedZones.has(zone); depth += 1) {
+      checkedZones.add(zone);
+      const url = new URL("https://cloudflare-dns.com/dns-query");
+      url.searchParams.set("name", zone);
+      url.searchParams.set("type", "NS");
+      const lookup = await fetch(url, { headers: { Accept: "application/dns-json" } });
+      if (!lookup.ok) throw new Error(`Nameserver lookup returned HTTP ${lookup.status}`);
+      const payload = await lookup.json() as { Answer?: Array<{ type?: number; name?: string; data?: unknown }>; Authority?: Array<{ type?: number; name?: string; data?: unknown }> };
+      const answer = [...(payload.Answer ?? []), ...(payload.Authority ?? [])];
+      answer.filter((record) => Number(record.type) === 2).forEach((record) => nameservers.add(normalizeNameserver(record.data)));
+      if (SUPPORT_NAMESERVERS.every((required) => nameservers.has(required))) break;
+      const parentZone = (payload.Authority ?? []).find((record) => Number(record.type) === 6)?.name;
+      const nextZone = normalizeNameserver(parentZone);
+      if (!nextZone || nextZone === zone) break;
+      zone = nextZone;
+    }
+    const resolved = [...nameservers].filter(Boolean).sort();
+    const missing = SUPPORT_NAMESERVERS.filter((required) => !nameservers.has(required));
+    return { ok: missing.length === 0, required: SUPPORT_NAMESERVERS, nameservers: resolved, missing, zone: [...checkedZones].at(-1) ?? domain };
+  } catch {
+    return { ok: false, required: SUPPORT_NAMESERVERS, nameservers: [...nameservers].filter(Boolean).sort(), missing: SUPPORT_NAMESERVERS, zone, error: "Nameserver lookup is temporarily unavailable." };
+  }
+}
 function parseDnsExpectation(record: Record<string, unknown>) {
   const line = String(record.value ?? "").trim();
   const match = line.match(/^(\S+)\s+\d+\s+IN\s+(\S+)\s+(.+)$/i);
@@ -159,8 +189,8 @@ Deno.serve(async (req: Request) => {
     const isAdmin = user.role === "admin";
     if (action === "dashboard") return response({ ok: true, ...(await dashboard(user.id)) });
     if (action === "service_dns") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); const { data: records, error } = await admin.from("eh_dns_records").select("*").eq("service_id", service.id).order("record_type"); if (error) throw error; return response({ ok: true, records: records ?? [] }); }
-    if (action === "verify_dns") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); return response({ ok: true, ...(await verifyDnsRecords(String(service.id))) }); }
-    if (action === "send_dns_help") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); const { data: records, error } = await admin.from("eh_dns_records").select("record_type,hostname,value,priority,status").eq("service_id", service.id).order("record_type"); if (error) throw error; if (!records?.length) throw new Error("No DNS records are available for this service yet."); const supportEmail = await configValue("support_email", "support@kmerhosting.com"); const csv = dnsCsv(records as Array<Record<string, unknown>>); const filename = dnsCsvFilename(String(service.domain_name)); const { data: queued, error: queueError } = await admin.from("eh_email_outbox").insert({ user_id: user.id, recipient: supportEmail, template_key: "dns_support", subject: `DNS setup help · ${service.domain_name}`, payload: { domainName: service.domain_name, replyTo: user.email, attachmentFilename: filename, csv, message: "A customer requested free DNS setup assistance. The DNS records are attached as a CSV file." } }).select("id").single(); if (queueError) throw queueError; return response({ ok: true, queued: true, requestId: queued.id, recipient: supportEmail }, 202); }
+    if (action === "verify_dns") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); const [dns, nameserverCheck] = await Promise.all([verifyDnsRecords(String(service.id)), verifySupportNameservers(String(service.domain_name))]); return response({ ok: true, ...dns, nameserverCheck }); }
+    if (action === "send_dns_help") { const service = await ownedService(String(body.serviceId ?? ""), user.id, isAdmin); const nameserverCheck = await verifySupportNameservers(String(service.domain_name)); if (!nameserverCheck.ok) { const current = nameserverCheck.nameservers.length ? nameserverCheck.nameservers.join(", ") : "none detected"; throw new Error(`Before requesting support, set these nameservers at your registrar: ${SUPPORT_NAMESERVERS.join(" and ")}. Current nameservers: ${current}.`); } const { data: records, error } = await admin.from("eh_dns_records").select("record_type,hostname,value,priority,status").eq("service_id", service.id).order("record_type"); if (error) throw error; if (!records?.length) throw new Error("No DNS records are available for this service yet."); const supportEmail = await configValue("support_email", "support@kmerhosting.com"); const csv = dnsCsv(records as Array<Record<string, unknown>>); const filename = dnsCsvFilename(String(service.domain_name)); const { data: queued, error: queueError } = await admin.from("eh_email_outbox").insert({ user_id: user.id, recipient: supportEmail, template_key: "dns_support", subject: `DNS setup help · ${service.domain_name}`, payload: { domainName: service.domain_name, nameservers: nameserverCheck.nameservers.join(", "), nameserverZone: nameserverCheck.zone, replyTo: user.email, attachmentFilename: filename, csv, message: "A customer requested free DNS setup assistance after delegating the domain to the required KmerHosting Support nameservers. The DNS records are attached as a CSV file." } }).select("id").single(); if (queueError) throw queueError; return response({ ok: true, queued: true, requestId: queued.id, recipient: supportEmail }, 202); }
     if (action === "wallet_transactions") { const { data, error } = await admin.from("eh_wallet_transactions").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(30); if (error) throw error; return response({ ok: true, transactions: data ?? [] }); }
     if (action === "mark_notification_read") { const { error } = await admin.from("eh_notifications").update({ read_at: new Date().toISOString() }).eq("id", String(body.id ?? "")).eq("user_id", user.id); if (error) throw error; return response({ ok: true }); }
     if (action === "update_profile") { const fullName = String(body.fullName ?? "").trim(); const companyName = String(body.companyName ?? "").trim() || null; const { error: userError } = await admin.from("eh_users").update({ full_name: fullName, company_name: companyName }).eq("id", user.id); if (userError) throw userError; const { error } = await admin.from("eh_profiles").update({ full_name: fullName, company_name: companyName }).eq("id", user.id); if (error) throw error; return response({ ok: true, user: { ...user, full_name: fullName, company_name: companyName } }); }
