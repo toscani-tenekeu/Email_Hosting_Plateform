@@ -106,6 +106,9 @@ input:disabled { background: #f0f2f6; color: #7b8496; }
 .empty-state p { max-width: 390px; font-size: 13px; line-height: 1.55; }
 .table-panel { padding: 0; overflow: hidden; }
 .table-actions { display: flex; align-items: center; gap: 8px; }
+.password-control { display: flex; align-items: center; gap: 8px; }
+.password-control input { min-width: 0; flex: 1; }
+.password-control .icon-button { flex: 0 0 auto; }
 .responsive-table { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 15px 17px; text-align: left; border-bottom: 1px solid #edf0f4; font-size: 12px; white-space: nowrap; }
