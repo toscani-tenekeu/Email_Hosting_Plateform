@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, Copy, Download, ExternalLink, Mail, Plus, RefreshCw, Send, Server, Trash2, X } from 'lucide-react'
+import { Check, Copy, Download, ExternalLink, Eye, EyeOff, KeyRound, Mail, Plus, RefreshCw, Send, Server, Trash2, X } from 'lucide-react'
 import { callApi, callMailApi } from '../lib/api'
 import { useAuth } from '../lib/auth'
 import { webmailUrl } from '../config'
@@ -30,6 +30,11 @@ function MailboxesPage() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ serviceId: '', localPart: '', displayName: '', password: '' })
   const [message, setMessage] = useState('')
+  const [credentialsMailbox, setCredentialsMailbox] = useState(null)
+  const [credentialsPassword, setCredentialsPassword] = useState('')
+  const [showCredentialsPassword, setShowCredentialsPassword] = useState(false)
+  const [credentialsBusy, setCredentialsBusy] = useState(false)
+  const [credentialsMessage, setCredentialsMessage] = useState('')
 
   async function create(event) {
     event.preventDefault(); setMessage('')
@@ -41,7 +46,42 @@ function MailboxesPage() {
     try { await callMailApi('delete_mailbox', { mailboxId: id }); await data.reload() } catch (error) { alert(error.message) }
   }
 
-  return <DashboardLayout><PageTitle title="Mailboxes" text="Create professional email accounts within each plan limit." action={<button className="button" onClick={() => setOpen(true)} disabled={!activeServices.length}><Plus size={17} /> Create mailbox</button>} />{open && <div className="modal-backdrop"><form className="modal" onSubmit={create}><div className="modal-head"><h2>Create mailbox</h2><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Domain<select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })}><option value="">Select a domain</option>{activeServices.map((item) => <option value={item.id} key={item.id}>{item.domain_name}</option>)}</select></label><label>Address<input required pattern="[A-Za-z0-9._-]+" placeholder="hello" value={form.localPart} onChange={(e) => setForm({ ...form, localPart: e.target.value.toLowerCase() })} /></label><label>Display name<input placeholder="Company Support" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></label><label>Temporary password<input required type="password" minLength="10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><small>The password is sent securely and is not stored in plaintext by this platform.</small>{message && <div className="form-message">{message}</div>}<button className="button full">Create mailbox</button></form></div>}<section className="panel table-panel"><div className="panel-head"><h2>Your mailboxes</h2><a href={webmailUrl} target="_blank" rel="noreferrer">Open webmail <ExternalLink size={14} /></a></div>{data.mailboxes.length ? <div className="responsive-table"><table><thead><tr><th>Email address</th><th>Storage</th><th>Protocols</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.mailboxes.map((mailbox) => <tr key={mailbox.id}><td><b>{mailbox.email}</b><small>{mailbox.display_name || 'No display name'}</small></td><td>{formatBytes(mailbox.used_bytes)} / {formatBytes(mailbox.quota_bytes)}</td><td>IMAP {mailbox.imap_enabled ? 'on' : 'off'} · POP3 {mailbox.pop3_enabled ? 'on' : 'off'}</td><td><StatusBadge value={mailbox.enabled ? 'active' : 'suspended'} /></td><td><div className="table-actions">{mailbox.enabled && <a className="button tiny secondary" href={webmailUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Webmail</a>}<button className="icon-button danger" onClick={() => remove(mailbox.id, mailbox.email)} title="Delete mailbox" aria-label={`Delete ${mailbox.email}`}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></div> : <EmptyState icon={Mail} title="No mailboxes" text="Provision a domain, then create the first professional address." />}</section></DashboardLayout>
+  function openCredentials(mailbox) {
+    setCredentialsMailbox(mailbox)
+    setCredentialsPassword('')
+    setShowCredentialsPassword(false)
+    setCredentialsMessage('')
+  }
+
+  function closeCredentials() {
+    if (credentialsBusy) return
+    setCredentialsMailbox(null)
+    setCredentialsPassword('')
+    setCredentialsMessage('')
+  }
+
+  async function changePassword(event) {
+    event.preventDefault()
+    setCredentialsBusy(true)
+    setCredentialsMessage('')
+    try {
+      await callMailApi('change_mailbox_password', { mailboxId: credentialsMailbox.id, password: credentialsPassword })
+      setCredentialsPassword('')
+      setShowCredentialsPassword(false)
+      setCredentialsMessage('Webmail password changed successfully.')
+    } catch (error) {
+      setCredentialsMessage(error.message)
+    } finally {
+      setCredentialsBusy(false)
+    }
+  }
+
+  return <DashboardLayout>
+    <PageTitle title="Mailboxes" text="Create professional email accounts within each plan limit." action={<button className="button" onClick={() => setOpen(true)} disabled={!activeServices.length}><Plus size={17} /> Create mailbox</button>} />
+    {open && <div className="modal-backdrop"><form className="modal" onSubmit={create}><div className="modal-head"><h2>Create mailbox</h2><button type="button" className="icon-button" onClick={() => setOpen(false)}><X /></button></div><label>Domain<select required value={form.serviceId} onChange={(e) => setForm({ ...form, serviceId: e.target.value })}><option value="">Select a domain</option>{activeServices.map((item) => <option value={item.id} key={item.id}>{item.domain_name}</option>)}</select></label><label>Address<input required pattern="[A-Za-z0-9._-]+" placeholder="hello" value={form.localPart} onChange={(e) => setForm({ ...form, localPart: e.target.value.toLowerCase() })} /></label><label>Display name<input placeholder="Company Support" value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></label><label>Temporary password<input required type="password" minLength="10" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><small>The password is sent securely and is not stored in plaintext by this platform.</small>{message && <div className="form-message">{message}</div>}<button className="button full">Create mailbox</button></form></div>}
+    {credentialsMailbox && <div className="modal-backdrop"><form className="modal" onSubmit={changePassword}><div className="modal-head"><h2>Webmail credentials</h2><button type="button" className="icon-button" onClick={closeCredentials} disabled={credentialsBusy}><X /></button></div><label>Webmail URL<input value={webmailUrl} readOnly /></label><label>Username<input value={credentialsMailbox.email} readOnly /></label><label>New password<div className="password-control"><input required minLength="10" maxLength="128" type={showCredentialsPassword ? 'text' : 'password'} value={credentialsPassword} onChange={(e) => setCredentialsPassword(e.target.value)} autoComplete="new-password" /><button type="button" className="icon-button" onClick={() => setShowCredentialsPassword((value) => !value)} title={showCredentialsPassword ? 'Hide password' : 'Show password'} aria-label={showCredentialsPassword ? 'Hide password' : 'Show password'}>{showCredentialsPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label><small>The current password cannot be displayed. Set a new password here; it is sent only to the mail service and is never stored by this platform.</small>{credentialsMessage && <div className="form-message">{credentialsMessage}</div>}<button className="button full" disabled={credentialsBusy || credentialsPassword.length < 10}>{credentialsBusy ? 'Changing password…' : 'Change password'}</button></form></div>}
+    <section className="panel table-panel"><div className="panel-head"><h2>Your mailboxes</h2><a href={webmailUrl} target="_blank" rel="noreferrer">Open webmail <ExternalLink size={14} /></a></div>{data.mailboxes.length ? <div className="responsive-table"><table><thead><tr><th>Email address</th><th>Storage</th><th>Protocols</th><th>Status</th><th>Actions</th></tr></thead><tbody>{data.mailboxes.map((mailbox) => <tr key={mailbox.id}><td><b>{mailbox.email}</b><small>{mailbox.display_name || 'No display name'}</small></td><td>{formatBytes(mailbox.used_bytes)} / {formatBytes(mailbox.quota_bytes)}</td><td>IMAP {mailbox.imap_enabled ? 'on' : 'off'} · POP3 {mailbox.pop3_enabled ? 'on' : 'off'}</td><td><StatusBadge value={mailbox.enabled ? 'active' : 'suspended'} /></td><td><div className="table-actions"><button className="button tiny secondary" onClick={() => openCredentials(mailbox)}><KeyRound size={14} /> Credentials</button>{mailbox.enabled && <a className="button tiny secondary" href={webmailUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Webmail</a>}<button className="icon-button danger" onClick={() => remove(mailbox.id, mailbox.email)} title="Delete mailbox" aria-label={`Delete ${mailbox.email}`}><Trash2 size={17} /></button></div></td></tr>)}</tbody></table></div> : <EmptyState icon={Mail} title="No mailboxes" text="Provision a domain, then create the first professional address." />}</section>
+  </DashboardLayout>
 }
 
 function DnsPage() {
