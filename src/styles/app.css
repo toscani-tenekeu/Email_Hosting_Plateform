@@ -69,6 +69,12 @@ input:disabled { background: #f0f2f6; color: #7b8496; }
 .stats-grid span { color: var(--muted); font-size: 12px; }
 .stats-grid b { font-size: 28px; letter-spacing: -.03em; }
 .stats-grid small { color: #8a94a7; }
+.domain-capacity-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.domain-capacity-card { display: flex; flex-direction: column; gap: 6px; min-height: 110px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.domain-capacity-card span { color: var(--muted); font-size: 11px; font-weight: 700; }
+.domain-capacity-card b { font-size: 22px; letter-spacing: -.03em; }
+.domain-capacity-card small { color: #8a94a7; font-size: 11px; }
+.domain-capacity-card.full { border-color: #e7b0aa; background: #fff8f7; }
 .dashboard-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; align-items: start; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin-bottom: 15px; }
 .panel-head h2 { margin: 0; }
@@ -132,3 +138,5 @@ td small { color: #8d96a7; margin-top: 4px; }
 .settings-form { max-width: 680px; }
 .settings-form h2 { margin-bottom: 20px; }
 .admin-stats { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 1100px) { .domain-capacity-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .domain-capacity-grid { grid-template-columns: 1fr; } }
